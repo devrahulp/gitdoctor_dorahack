@@ -35,7 +35,7 @@ jobs:
         working-directory: backend
         env:
             PYTHONPATH: .
-        run: python -m pytestwor
+        run: python -m pytest
 
 
   frontend:
