@@ -1,10 +1,13 @@
 from flask import Blueprint, request
 from urllib.parse import urlparse
 
-from app.services.github_service import (clone_repository ,
-                                         get_repository_info ,
-                                           detect_project)
-from app.database import get_db
+from app.services.github_service import (
+    get_repository_info,
+    get_repository_tree,
+    filter_relevant_files,
+    rank_files,
+    get_file_content
+)
 
 
 projects_bp = Blueprint("projects", __name__)
@@ -40,7 +43,9 @@ def create_project():
     data = request.get_json()
 
     if not data or "github_url" not in data:
-        return {"error": "github_url is required"}, 400
+        return {
+            "error": "github_url is required"
+        }, 400
 
     github_url = data["github_url"].strip()
 
@@ -51,56 +56,131 @@ def create_project():
 
     try:
 
+        # --------------------------------
+        # 1. Get repository information
+        # --------------------------------
+
         repo_info = get_repository_info(github_url)
 
-        return {
-            "message": "GitHub repository found",
-            "github": repo_info
-        }, 200
-        parts = github_url.rstrip("/").replace(".git", "").split("/")
 
-        owner = parts[-2]
-        repository_name = parts[-1]
+        # --------------------------------
+        # 2. Get all repository file paths
+        # --------------------------------
 
-        db = get_db()
-        cursor = db.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO projects
-            (github_url, owner, repository_name, language, framework, project_type)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """,
-            (
-                github_url,
-                owner,
-                repository_name,
-                project_info["language"],
-                project_info["framework"],
-                project_info["project_type"]
-            )
+        files = get_repository_tree(
+            github_url,
+            repo_info["default_branch"]
         )
-                
 
-        db.commit()
 
-        project_id = cursor.lastrowid
+        # --------------------------------
+        # 3. Filter relevant files
+        # --------------------------------
 
-        cursor.close()
-        db.close()
+        relevant_files = filter_relevant_files(files)
+
+
+        # --------------------------------
+        # 4. Rank relevant files
+        # --------------------------------
+
+        ranked_files = rank_files(relevant_files)
+
+
+        # --------------------------------
+        # 5. Select files for analysis
+        # --------------------------------
+
+        config_files = []
+        source_files = []
+        test_files = []
+
+        for file in ranked_files:
+
+            lower = file.lower()
+            filename = file.split("/")[-1].lower()
+
+            if filename in {
+                "package.json",
+                "requirements.txt",
+                "pyproject.toml",
+                "dockerfile",
+                "docker-compose.yml",
+                "docker-compose.yaml"
+            }:
+
+                config_files.append(file)
+
+            elif "/test" in lower or "test" in filename:
+
+                test_files.append(file)
+
+            else:
+
+                source_files.append(file)
+
+
+        selected_files = (
+            config_files[:5]
+            + source_files[:40]
+            + test_files[:5]
+        )
+
+        selected_files = selected_files[:50]
+
+
+        # --------------------------------
+        # 6. Fetch selected file contents
+        # --------------------------------
+
+        files_content = []
+
+        for file in selected_files:
+
+            try:
+
+                content = get_file_content(
+                    github_url,
+                    file,
+                    repo_info["default_branch"]
+                )
+
+                files_content.append({
+                    "file": file,
+                    "content": content
+                })
+
+            except Exception:
+
+                continue
+
+
+        # --------------------------------
+        # 7. Temporary response
+        # --------------------------------
 
         return {
-            "message": "Project created successfully",
-            "project_id": project_id,
-            "github_url": github_url,
-            "owner": owner,
-            "repository_name": repository_name,
-            "repo_path": repo_path,
-            "language": project_info["language"],
-            "framework": project_info["framework"],
-            "project_type": project_info["project_type"],
-            "file_count":project_info["file_count"]
-        }, 201
+            "message": "Repository files fetched",
+
+            "github": repo_info,
+
+            "file_count": len(files),
+
+            "relevant_file_count": len(relevant_files),
+
+            "selected_file_count": len(selected_files),
+
+            "fetched_file_count": len(files_content),
+
+            "files": [
+                item["file"]
+                for item in files_content
+            ]
+        }, 200
+
 
     except Exception as e:
-        return {"error": str(e)}, 400
+
+        return {
+            "error": str(e)
+        }, 400
