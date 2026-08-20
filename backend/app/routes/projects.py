@@ -9,6 +9,8 @@ from app.services.github_service import (
     get_file_content
 )
 
+from app.services.analyzer import analyze_repository
+
 
 projects_bp = Blueprint("projects", __name__)
 
@@ -159,25 +161,19 @@ def create_project():
         # 7. Temporary response
         # --------------------------------
 
+        # 7. Analyze repository
+        issues = analyze_repository(files_content)
+
         return {
-            "message": "Repository files fetched",
-
+            "message": "Repository analyzed",
             "github": repo_info,
-
             "file_count": len(files),
-
             "relevant_file_count": len(relevant_files),
-
             "selected_file_count": len(selected_files),
-
             "fetched_file_count": len(files_content),
-
-            "files": [
-                item["file"]
-                for item in files_content
-            ]
+            "issue_count": len(issues),
+            "issues": issues
         }, 200
-
 
     except Exception as e:
 
