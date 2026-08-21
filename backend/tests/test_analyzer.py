@@ -1,11 +1,15 @@
-from app.services.analyzer import analyze_file
+from app.services.analyzer import (
+    analyze_file,
+    analyze_repository,
+    calculate_health_score
+)
 
 
 def test_detect_hardcoded_password():
 
     code = '''
-            password = "admin123"
-            '''
+password = "admin123"
+'''
 
     issues = analyze_file(
         "app.py",
@@ -20,8 +24,8 @@ def test_detect_hardcoded_password():
 def test_detect_eval():
 
     code = '''
-            result = eval(user_input)
-            '''
+result = eval(user_input)
+'''
 
     issues = analyze_file(
         "app.py",
@@ -33,12 +37,11 @@ def test_detect_eval():
     assert issues[0]["severity"] == "high"
 
 
-
 def test_detect_debug_print():
 
     code = '''
-        print("debug")
-        '''
+print("debug")
+'''
 
     issues = analyze_file(
         "app.py",
@@ -49,6 +52,37 @@ def test_detect_debug_print():
     assert issues[0]["category"] == "code_quality"
     assert issues[0]["severity"] == "low"
 
+
+def test_detect_console_log():
+
+    code = '''
+console.log("debug");
+'''
+
+    issues = analyze_file(
+        "app.js",
+        code
+    )
+
+    assert len(issues) == 1
+    assert issues[0]["title"] == (
+        "Debug console.log statement"
+    )
+
+
+def test_detect_shell_true():
+
+    code = '''
+subprocess.run(command, shell=True)
+'''
+
+    issues = analyze_file(
+        "app.py",
+        code
+    )
+
+    assert len(issues) == 1
+    assert issues[0]["severity"] == "high"
 
 
 def test_analyze_repository():
@@ -64,8 +98,29 @@ def test_analyze_repository():
         }
     ]
 
-    from app.services.analyzer import analyze_repository
-
-    issues = analyze_repository(files)
+    issues = analyze_repository(
+        files
+    )
 
     assert len(issues) == 2
+
+
+def test_health_score():
+
+    issues = [
+        {
+            "severity": "high"
+        },
+        {
+            "severity": "medium"
+        },
+        {
+            "severity": "low"
+        }
+    ]
+
+    score = calculate_health_score(
+        issues
+    )
+
+    assert score == 87
